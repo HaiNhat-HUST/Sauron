@@ -50,9 +50,6 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hash_password(password) == password_hash
 
 
-# init sqlite3 database that store users information
-
-
 def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(
