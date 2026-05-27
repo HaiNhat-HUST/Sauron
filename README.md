@@ -207,3 +207,29 @@ stats = await DashboardQueries().overview()
 `Retriever` exposes `semantic_search`, `keyword_search`, `hybrid_search` (RRF
 fusion), `lookup_observable`, `neighbors`, and `context_for_query` — the
 building blocks for the Q&A / report-generation agent.
+
+
+# jason 
+
+
+.
+├── config.py
+├── docker-compose.yml
+├── Dockerfile
+├── README.md
+├── requirements.txt
+├── src
+│   ├── agent
+│   ├── api                     // api function          engine -> api -> web route
+│   │   ├── dashboard.py
+│   │   └── storage.py
+│   ├── llm
+│   └── web
+│       ├── deps.py
+│       ├── __init__.py
+│       ├── __main__.py
+│       ├── main.py
+│       ├── model
+│       ├── routers
+│       └── static
+└── test.py
