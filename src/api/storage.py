@@ -11,19 +11,19 @@ DB_PATH = os.getenv("APP_DB_PATH", "data/app.db")
 PASSWORD_SALT = os.getenv("APP_PASSWORD_SALT", "ti-demo-salt")
 SESSION_TTL_HOURS = int(os.getenv("APP_SESSION_TTL_HOURS", "24"))
 
-# DEFAULT_CONNECTORS = [
-#     {"name": "threatfox", "source": "abuse.ch", "interval_minutes": 30, "is_enabled": 1},
-#     {"name": "malwarebazaar", "source": "abuse.ch", "interval_minutes": 60, "is_enabled": 1},
-#     {"name": "urlhaus", "source": "abuse.ch", "interval_minutes": 45, "is_enabled": 1},
-#     {"name": "feodo", "source": "abuse.ch", "interval_minutes": 90, "is_enabled": 1},
-#     {"name": "nvd", "source": "nist.gov", "interval_minutes": 360, "is_enabled": 1},
-#     {"name": "mitre_attack", "source": "mitre.org", "interval_minutes": 1440, "is_enabled": 1},
-#     {"name": "cisa_kev", "source": "cisa.gov", "interval_minutes": 720, "is_enabled": 1},
-#     {"name": "otx", "source": "alienvault.com", "interval_minutes": 120, "is_enabled": 1},
-#     {"name": "reddit", "source": "reddit.com", "interval_minutes": 120, "is_enabled": 1},
-#     {"name": "rss", "source": "security blogs", "interval_minutes": 60, "is_enabled": 1},
-#     {"name": "twitter", "source": "x.com", "interval_minutes": 180, "is_enabled": 0},
-# ]
+DEFAULT_CONNECTORS = [
+    {"name": "threatfox", "source": "abuse.ch", "interval_minutes": 30, "is_enabled": 1},
+    {"name": "malwarebazaar", "source": "abuse.ch", "interval_minutes": 60, "is_enabled": 1},
+    {"name": "urlhaus", "source": "abuse.ch", "interval_minutes": 45, "is_enabled": 1},
+    {"name": "feodo", "source": "abuse.ch", "interval_minutes": 90, "is_enabled": 1},
+    {"name": "nvd", "source": "nist.gov", "interval_minutes": 360, "is_enabled": 1},
+    {"name": "mitre_attack", "source": "mitre.org", "interval_minutes": 1440, "is_enabled": 1},
+    {"name": "cisa_kev", "source": "cisa.gov", "interval_minutes": 720, "is_enabled": 1},
+    {"name": "otx", "source": "alienvault.com", "interval_minutes": 120, "is_enabled": 1},
+    {"name": "reddit", "source": "reddit.com", "interval_minutes": 120, "is_enabled": 1},
+    {"name": "rss", "source": "security blogs", "interval_minutes": 60, "is_enabled": 1},
+    {"name": "twitter", "source": "x.com", "interval_minutes": 180, "is_enabled": 0},
+]
 
 
 def _utc_now() -> datetime:

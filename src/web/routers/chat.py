@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends
 
-from ...storage.retrieval import Retriever
+# from ...storage.retrieval import Retriever
 from ...storage.vector import get_vector_store
 from ..deps import get_current_user
 from ..schemas import ChatRequest

@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..api import storage
-from ..collectors.scheduler import get_scheduler
+# from ..collectors.scheduler import get_scheduler
 from .routers import admin, auth, dashboard
 from .routers import chat
 
@@ -49,13 +49,13 @@ async def _startup() -> None:
         await init_ti_db()
     except Exception as exc:  # noqa: BLE001
         logger.warning("TI store not reachable on startup (%s) — will retry lazily", exc)
-    if os.getenv("SCHEDULER_ENABLED", "true").lower() in ("1", "true", "yes"):
-        await get_scheduler().start()
+    # if os.getenv("SCHEDULER_ENABLED", "true").lower() in ("1", "true", "yes"):
+    #     await get_scheduler().start()
 
 
 @app.on_event("shutdown")
 async def _shutdown() -> None:
-    await get_scheduler().stop()
+    # await get_scheduler().stop()
     try:
         from ..storage.database import dispose
 

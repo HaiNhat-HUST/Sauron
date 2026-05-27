@@ -7,7 +7,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException
 
 from ...api import storage
-from ...collectors.scheduler import get_scheduler
+# from ...collectors.scheduler import get_scheduler
 from ..deps import require_admin, user_out
 from ..schemas import ConnectorUpdate, RetentionUpdate, UserCreate, UserUpdate
 
