@@ -1,0 +1,55 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-threatintel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-threatintel}
+      POSTGRES_DB: ${POSTGRES_DB:-threatintel}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-threatintel}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  chroma:
+    image: chromadb/chroma:latest
+    ports:
+      - "${CHROMA_PORT:-8001}:8000"
+    volumes:
+      - chromadata:/chroma/chroma
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      # Async SQLAlchemy URL pointing at the db service.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-threatintel}:${POSTGRES_PASSWORD:-threatintel}@db:5432/${POSTGRES_DB:-threatintel}
+      # Connectors write straight into the store + vector DB so the dashboard
+      # reflects live collection (also keeps file copies).
+      SCHEDULER_OUTPUT: both
+      # Use the Chroma service for embeddings.
+      CHROMA_HOST: chroma
+      CHROMA_PORT: "8000"
+    env_file:
+      - .env.example
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  chromadata:

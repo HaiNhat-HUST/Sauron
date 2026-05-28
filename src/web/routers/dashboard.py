@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends
 
-from ...api import dashboard as dashboard_api
+from ...storage import dashboard as dashboard_api
 from ..deps import get_current_user
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])

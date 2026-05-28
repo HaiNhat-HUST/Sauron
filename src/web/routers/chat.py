@@ -1,62 +1,57 @@
-"""Chat route — grounded lookup over the TI store (vector + keyword search)."""
+"""Chat + report routes — backed by the TIAgent (tool-calling LLM)."""
 
 from __future__ import annotations
 
-import asyncio
+import logging
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
-# from ...storage.retrieval import Retriever
-from ...storage.vector import get_vector_store
+from ...llm import sessions as chat_sessions
+from ...llm.agent import get_agent
+from ...llm.reports import generate_report
 from ..deps import get_current_user
-from ..schemas import ChatRequest
+from ..schemas import ChatRequest, ReportRequest
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
 
 
-### will implement ai agent here
+def _session_id(payload_sid: str | None, user: Dict[str, Any]) -> str:
+    return (payload_sid or "").strip() or f"u{user['id']}-default"
+
+
 @router.post("/chat/ask")
-async def ask(payload: ChatRequest, _: Dict[str, Any] = Depends(get_current_user)) -> Any:
-    # message = payload.message.strip()
-    # if not message:
-    #     return {"answer": "Please enter a question.", "sources": []}
+async def ask(payload: ChatRequest, user: Dict[str, Any] = Depends(get_current_user)) -> Any:
+    message = (payload.message or "").strip()
+    if not message:
+        return {"answer": "Please enter a question.", "tool_calls": [], "sources": []}
 
-    # lines: list[str] = []
-    # sources: list[str] = []
+    session_id = _session_id(payload.session_id, user)
+    try:
+        return await get_agent().chat(
+            user_id=user["id"], session_id=session_id, message=message
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("agent chat failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Agent unavailable — check the LLM provider configuration.")
 
-    # # Contextual (semantic) search over article content via the vector DB.
-    # try:
-    #     vec_hits = await asyncio.to_thread(get_vector_store().search, message, 5)
-    # except Exception:  # noqa: BLE001
-    #     vec_hits = []
-    # for h in vec_hits:
-    #     meta = h.get("metadata") or {}
-    #     title = meta.get("title") or h.get("id")
-    #     snippet = (h.get("document") or "").strip().replace("\n", " ")[:160]
-    #     lines.append(f"• [article] {title}" + (f" — {snippet}" if snippet else ""))
-    #     src = meta.get("source_name") or meta.get("source_type")
-    #     if src and src not in sources:
-    #         sources.append(src)
 
-    # # Exact keyword hits for CVEs / IOCs from PostgreSQL.
-    # try:
-    #     kw_hits = await Retriever().search(message, limit=4)
-    # except Exception:  # noqa: BLE001
-    #     kw_hits = []
-    # for h in kw_hits:
-    #     if h.get("kind") == "article":
-    #         continue
-    #     lines.append(f"• [{h.get('kind')}] {h.get('label')}")
-    #     if h.get("source") and h["source"] not in sources:
-    #         sources.append(h["source"])
+@router.post("/chat/report")
+async def report(payload: ReportRequest, _: Dict[str, Any] = Depends(get_current_user)) -> Any:
+    topic = (payload.topic or "").strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="Topic is required.")
+    try:
+        return await generate_report(topic)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("report generation failed: %s", exc)
+        raise HTTPException(status_code=503, detail=f"Report generation failed: {exc}")
 
-    # if not lines:
-    #     return {
-    #         "answer": f"No stored intelligence matched “{message}” yet. "
-    #                   "Collect more data or rephrase the question.",
-    #         "sources": [],
-    #     }
-    # header = f"Found {len(lines)} relevant item(s) for “{message}”:"
-    # return {"answer": header + "\n" + "\n".join(lines), "sources": sources[:6]}
-    return 0
+
+@router.post("/chat/reset")
+async def reset(payload: ChatRequest, user: Dict[str, Any] = Depends(get_current_user)) -> Any:
+    """Clear the chat history for this user+session (does not delete TI data)."""
+    chat_sessions.clear(user["id"], _session_id(payload.session_id, user))
+    return {"ok": True}

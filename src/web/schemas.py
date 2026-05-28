@@ -34,4 +34,21 @@ class RetentionUpdate(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = ""
+    session_id: str | None = None   # client-supplied; keeps multi-turn history
+
+
+class ReportRequest(BaseModel):
+    topic: str
+
+
+class LLMProviderUpdate(BaseModel):
+    enabled: bool | None = None
+    api_key: str | None = None       # None = leave as-is; "" = clear
+    base_url: str | None = None
+    default_model: str | None = None
+
+
+class LLMFunctionUpdate(BaseModel):
+    provider: str
+    model: str | None = None

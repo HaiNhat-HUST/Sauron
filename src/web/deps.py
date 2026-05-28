@@ -1,4 +1,4 @@
-"""Shared FastAPI dependencies — bearer-token auth backed by the SQLite store."""
+"""Shared FastAPI dependencies — bearer-token auth backed by the Postgres app store."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import Depends, Header, HTTPException
 
-from ..api import storage
+from ..storage import app as appstore
 
 
 def _parse_bearer(authorization: Optional[str]) -> Optional[str]:
@@ -20,7 +20,7 @@ def _parse_bearer(authorization: Optional[str]) -> Optional[str]:
 
 async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     token = _parse_bearer(authorization)
-    user = storage.get_user_by_token(token) if token else None
+    user = await appstore.get_user_by_token(token) if token else None
     if not user or not user.get("is_active"):
         raise HTTPException(status_code=401, detail="Invalid token")
     return user

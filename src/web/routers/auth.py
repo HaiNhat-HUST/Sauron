@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from ...api import storage
+from ...storage import app as appstore
 from ..deps import user_out
 from ..schemas import LoginRequest
 
@@ -18,11 +18,11 @@ async def login(payload: LoginRequest) -> Any:
     username = payload.username.strip()
     password = payload.password.strip()
 
-    user = storage.get_user_by_credentials(username)
-    if not user or not storage.verify_password(password, user["password_hash"]):
+    user = await appstore.get_user_by_credentials(username)
+    if not user or not appstore.verify_password(password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.get("is_active"):
         raise HTTPException(status_code=403, detail="User disabled")
 
-    token = storage.create_session(user["id"])
+    token = await appstore.create_session(user["id"])
     return {"token": token, "user": user_out(user)}
