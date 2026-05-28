@@ -1,5 +1,3 @@
-# Sauron
-
 # ai-threat-intel
 
 Automated, AI-augmented Threat Intelligence platform. Connectors pull from
@@ -138,6 +136,50 @@ and persists incremental cursors to `data/state/<connector>.json`.
 
 ---
 
+## Database access (local dev)
+
+Both `db` and `chroma` services in [docker-compose.yml](docker-compose.yml) bind
+their ports to the host, so any SQL/HTTP client on your machine can connect
+directly — no exec into the container needed. Credentials come from `.env`
+(defaults below match `.env.example`).
+
+| Service | Host:port | Connect with |
+|---------|-----------|--------------|
+| PostgreSQL (TI + app store) | `localhost:5432` | psql / DBeaver / pgAdmin / TablePlus |
+| ChromaDB (article embeddings) | `localhost:8001` | HTTP API at `http://localhost:8001/api/v1` |
+
+```powershell
+# 1. start the data services
+docker compose up -d db chroma
+
+# 2. CLI access — uses default creds (threatintel / threatintel / threatintel)
+docker exec -it ai-threat-intel-db-1 psql -U threatintel -d threatintel
+
+# or from the host directly (needs psql installed locally)
+psql "postgresql://threatintel:threatintel@localhost:5432/threatintel"
+```
+
+GUI clients — point them at `localhost:5432`, database `threatintel`, user
+`threatintel`, password `threatintel`. The single database holds **both** the
+TI data and the app/admin state:
+
+| Table | Holds |
+|-------|-------|
+| `articles` / `iocs` / `cves` / `article_cves` / `tags` / `article_tags` | collected threat intelligence |
+| `users` / `sessions` | SPA accounts + bearer-token sessions |
+| `connector_settings` | per-connector `is_enabled` / `interval_minutes` / last-run status (driven by the admin UI) |
+| `retention_policy` | singleton row, retention windows |
+
+Chroma stores article-content embeddings; query it via the official
+[`chromadb`](https://docs.trychroma.com/) Python client or the REST API. The
+collection name defaults to `articles` (see `CHROMA_COLLECTION` in `.env`).
+
+> The default credentials are **dev-only**. Change `POSTGRES_PASSWORD` and the
+> seeded admin password (`appstore.seed_defaults` → admin/admin123) before
+> exposing this anywhere outside localhost.
+
+---
+
 ## Storage layer (PostgreSQL + pgvector)
 
 The store ([src/storage/](src/storage/)) ingests connector bundles into one
@@ -207,29 +249,3 @@ stats = await DashboardQueries().overview()
 `Retriever` exposes `semantic_search`, `keyword_search`, `hybrid_search` (RRF
 fusion), `lookup_observable`, `neighbors`, and `context_for_query` — the
 building blocks for the Q&A / report-generation agent.
-
-
-# jason 
-
-
-.
-├── config.py
-├── docker-compose.yml
-├── Dockerfile
-├── README.md
-├── requirements.txt
-├── src
-│   ├── agent
-│   ├── api                     // api function          engine -> api -> web route
-│   │   ├── dashboard.py
-│   │   └── storage.py
-│   ├── llm
-│   └── web
-│       ├── deps.py
-│       ├── __init__.py
-│       ├── __main__.py
-│       ├── main.py
-│       ├── model
-│       ├── routers
-│       └── static
-└── test.py

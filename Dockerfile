@@ -7,8 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src ./src
 
-ENV APP_DB_PATH=/app/data/app.db
-
 EXPOSE 8000
 
 # FastAPI app via uvicorn (Linux: default loop is fine for psycopg async).

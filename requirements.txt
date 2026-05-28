@@ -14,3 +14,9 @@ SQLAlchemy[asyncio]>=2.0  # async ORM
 psycopg[binary]>=3.1      # PostgreSQL driver (psycopg3, sync + async)
 chromadb>=0.5             # vector DB for article-content embeddings (contextual search)
 
+# --- LLM enrichment (langchain providers; install just the one you use) ---
+langchain-core>=0.3       # ChatModel abstraction + with_structured_output
+langchain-openai>=0.2     # optional: OpenAI provider (gpt-4o-mini etc.)
+langchain-google-genai>=2.0  # optional: Gemini provider
+langchain-ollama>=0.2     # optional: local Ollama provider
+
