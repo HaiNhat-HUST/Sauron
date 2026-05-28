@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _BASE = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=False)
 
+
 class StorageConfig(BaseSettings):
     model_config = _BASE
 
@@ -28,7 +29,6 @@ class StorageConfig(BaseSettings):
     chroma_port: int = Field(8000, validation_alias="CHROMA_PORT")
     chroma_path: str = Field("./data/chroma", validation_alias="CHROMA_PATH")  # embedded client
     chroma_collection: str = Field("articles", validation_alias="CHROMA_COLLECTION")
-
     # Embedding backend for Chroma: default (local ONNX MiniLM) | openai
     embedding_provider: str = Field("default", validation_alias="EMBEDDING_PROVIDER")
     embedding_model: str = Field("text-embedding-3-small", validation_alias="EMBEDDING_MODEL")

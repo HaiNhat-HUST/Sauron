@@ -1,6 +1,6 @@
-"""SQLAlchemy models — simple relational TI schema (no STIX).
+"""SQLAlchemy models — TI schema + app/admin schema, single Postgres DB.
 
-Tables:
+**TI schema** (the intelligence data the system collects):
 * ``articles``      — unstructured documents (RSS/Reddit/Twitter posts, OTX pulses).
 * ``iocs``          — indicators of compromise (globally unique by type+value).
 * ``cves``          — vulnerabilities.
@@ -8,9 +8,14 @@ Tables:
 * ``tags``          — taxonomy (malware / attack_technique / threat_actor / campaign).
 * ``article_tags``  — article ↔ tag (many-to-many) with a confidence score.
 
-Improvements over the base spec: ``iocs.tags`` and ``cves.products`` use
-PostgreSQL ARRAY; ``iocs``/``cves`` carry ``source_type`` for provenance and
-dashboard aggregation.
+**App schema** (web/admin/scheduler runtime state):
+* ``users``               — accounts for the SPA.
+* ``sessions``            — bearer-token sessions.
+* ``connector_settings``  — admin-controlled enable/interval + last-run status.
+* ``retention_policy``    — singleton row driving data lifecycle (raw / archived).
+
+``iocs.tags`` and ``cves.products`` use PostgreSQL ARRAY; ``iocs``/``cves``
+carry ``source_type`` for provenance and dashboard aggregation.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     ARRAY,
+    Boolean,
     CheckConstraint,
     Float,
     ForeignKey,
@@ -137,3 +143,119 @@ class ArticleTag(Base):
         ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True
     )
     confidence: Mapped[float] = mapped_column(Float, default=0.5)
+
+
+# --- App / admin schema --------------------------------------------------
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Session(Base):
+    __tablename__ = "sessions"
+
+    token: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+
+
+class ConnectorSetting(Base):
+    __tablename__ = "connector_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    source: Mapped[str] = mapped_column(String(128), nullable=False)
+    interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_run: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
+    # Transient run state set by the scheduler — idle | queued | running.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="idle")
+    last_status: Mapped[str | None] = mapped_column(String(20))   # ok | error | needs-key
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_objects: Mapped[int | None] = mapped_column(Integer)
+
+
+class RetentionPolicy(Base):
+    __tablename__ = "retention_policy"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # singleton: id = 1
+    raw_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    normalized_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    archive_policy: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    __table_args__ = (CheckConstraint("id = 1", name="ck_retention_singleton"),)
+
+
+class LLMProvider(Base):
+    """One row per supported LLM provider — admin-controlled."""
+
+    __tablename__ = "llm_providers"
+
+    name: Mapped[str] = mapped_column(String(32), primary_key=True)   # openai | gemini | ollama
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    api_key: Mapped[str | None] = mapped_column(Text)                # plaintext for v1 (single-tenant local DB)
+    base_url: Mapped[str | None] = mapped_column(Text)               # Ollama or custom OpenAI-compatible host
+    default_model: Mapped[str | None] = mapped_column(String(128))
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class LLMFunctionModel(Base):
+    """Per-function provider/model routing (e.g. cheap local for enrichment,
+    paid frontier model for the chat agent)."""
+
+    __tablename__ = "llm_function_models"
+
+    function: Mapped[str] = mapped_column(String(32), primary_key=True)  # agent_chat | report | enrich_article
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(128))               # NULL → use the provider's default_model
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class EnrichmentJob(Base):
+    """One unit of work for the enrichment workers.
+
+    The unique (target_type, target_id, enricher) tuple makes the scanner
+    idempotent: re-running ``INSERT … ON CONFLICT DO NOTHING`` against the
+    table cannot create duplicate jobs. Workers claim ``status='pending'``
+    rows whose ``next_attempt_at`` has elapsed via ``SELECT … FOR UPDATE
+    SKIP LOCKED``.
+    """
+
+    __tablename__ = "enrichment_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    target_type: Mapped[str] = mapped_column(String(20), nullable=False)   # article | ioc | cve
+    target_id: Mapped[str] = mapped_column(String(64), nullable=False)     # str so IPs/CVE ids fit
+    enricher: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("target_type", "target_id", "enricher", name="uq_enrichment_target"),
+        Index("idx_enrichment_pending", "status", "next_attempt_at"),
+    )
