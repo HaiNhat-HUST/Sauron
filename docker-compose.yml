@@ -37,8 +37,17 @@ services:
       # Use the Chroma service for embeddings.
       CHROMA_HOST: chroma
       CHROMA_PORT: "8000"
+      # Ollama runs on the host (outside the compose network). On both Docker
+      # Desktop (Win/Mac) and Linux with the extra_hosts entry below, the host
+      # is reachable at host.docker.internal. The seed picks this up via env
+      # on first boot; for existing deployments, change the Ollama base_url
+      # in admin → LLM models to match.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    extra_hosts:
+      # Required on Linux Docker; harmless on Docker Desktop where it already exists.
+      - "host.docker.internal:host-gateway"
     env_file:
-      - .env.example
+      - .env
     volumes:
       - ./data:/app/data
     ports:
