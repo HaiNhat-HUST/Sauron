@@ -1,251 +1,156 @@
 # ai-threat-intel
 
-Automated, AI-augmented Threat Intelligence platform. Connectors pull from
-external threat sources, normalize everything to **STIX 2.1**, and feed a
-pipeline for extraction / enrichment / storage.
+An automated, AI-augmented **threat-intelligence platform**. It collects OSINT
+from a dozen sources, normalises everything into a relational store, enriches it
+with LLMs and free intel services, and serves it through a single-page web app
+with an interactive relationship graph and a tool-calling chat agent.
 
-This repository currently ships:
-- the **connector framework** (`src/collectors`) — an OpenCTI-inspired, async,
-  in-process collection layer, and
-- the **storage layer** (`src/storage`) — PostgreSQL + pgvector for dashboard
-  aggregation, IOC lookup and agentic RAG retrieval.
+> Single-tenant, self-hostable, runs entirely from `docker compose up`.
 
 ---
 
-## Connector framework
+## Features
 
-### Design (inspired by OpenCTI)
+- **11 collectors** — abuse.ch (URLhaus / MalwareBazaar / ThreatFox / Feodo),
+  NVD, MITRE ATT&CK, CISA KEV, AlienVault OTX, Reddit, RSS, X/Twitter.
+- **Unified TI store** — PostgreSQL holds articles, IOCs, CVEs and a tag
+  taxonomy (malware / ATT&CK / actors / campaigns), linked many-to-many.
+- **Enrichment pipeline** — a background worker pool that:
+  - summarises articles and extracts entities with an LLM;
+  - resolves IOC infrastructure (domain → IP) and cross-references it against
+    collected blocklists;
+  - looks up file hashes on **MalwareBazaar + VirusTotal**;
+  - scores CVEs with **EPSS** (exploit-prediction).
+- **Interactive graph** — explore an article and pivot through its IOCs, CVEs,
+  techniques and shared infrastructure; expand, collapse, filter by entity type.
+- **Intel chat agent** — a tool-calling LLM analyst grounded in the store, plus
+  a structured report generator.
+- **Admin console** — manage connector schedules, LLM providers/routing,
+  retention and users from the UI.
 
-Like OpenCTI's `EXTERNAL_IMPORT` connectors, each connector is a scheduled job
-that pulls from one source, builds a STIX bundle, and ships it. Adapted here to
-run **async and in-process** so it plugs straight into the Python pipeline (no
-RabbitMQ required to get started — swap in a broker later by adding one
-`OutputHandler`).
+---
+
+## Architecture
 
 ```
-                ┌──────────────────────────────────────────┐
-                │              runner.py (CLI)               │
-                │   schedules N connectors on async loops    │
-                └───────────────┬────────────────────────────┘
-                                │
-        ┌───────────────────────┼───────────────────────┐
-        ▼                       ▼                       ▼
-  ┌───────────┐          ┌───────────┐           ┌───────────┐
-  │ Connector │  …        │ Connector │   …        │ Connector │   (BaseConnector)
-  └─────┬─────┘          └─────┬─────┘           └─────┬─────┘
-        │ collect() -> [STIX objects]                  │
-        ▼                                              ▼
-  StixFactory (author + TLP + deterministic IDs)   StateStore (cursors)
-        │
-        ▼
-  build_bundle() ──► OutputHandler ──► data/output/*.json  (or asyncio.Queue → pipeline)
+ Collectors ──▶ Storage (PostgreSQL) ──▶ Web app (FastAPI + SPA)
+  (async,         articles / iocs /        dashboard · articles graph ·
+   scheduled)     cves / tags + links      intel chat · admin console
+       │                  ▲
+       └──▶ Enrichment workers ──┘   (LLM summaries, IOC/CVE/hash intel)
+                  │
+           ChromaDB (article embeddings for semantic search)
 ```
 
-Key pieces (all under [src/collectors/](src/collectors/)):
+| Layer | Path | Role |
+|-------|------|------|
+| Collectors | [src/collectors/](src/collectors/) | async source connectors + scheduler |
+| Storage | [src/storage/](src/storage/) | SQLAlchemy models, ingest, queries, graph |
+| Enrichment | [src/enrichment/](src/enrichment/) | job queue + worker pool + enrichers |
+| LLM | [src/llm/](src/llm/) | chat agent, report generator, provider routing |
+| Web | [src/web/](src/web/) | FastAPI API + static SPA (`src/web/static`) |
 
-| File | Responsibility |
-|------|----------------|
-| [base.py](src/collectors/base.py) | `BaseConnector`: scheduling loop, retry/backoff HTTP, state, author/TLP stamping, bundling |
-| [stix_utils.py](src/collectors/stix_utils.py) | `StixFactory` + pattern builders; deterministic UUIDv5 IDs for dedup |
-| [ioc_extractor.py](src/collectors/ioc_extractor.py) | regex IOC extraction (handles defanged `hxxp`, `1.2.3[.]4`) |
-| [config.py](src/collectors/config.py) | per-connector `pydantic-settings` models (env-driven) |
-| [state.py](src/collectors/state.py) | file-backed per-connector cursors |
-| [output.py](src/collectors/output.py) | `OutputHandler`s: File / Queue / Logging / Composite |
-| [registry.py](src/collectors/registry.py) | name → connector mapping |
-| [runner.py](src/collectors/runner.py) | CLI entry point |
+---
 
-### Connectors (10 + 1)
+## Quick start (Docker)
 
-| Connector | Source | TI targets | Auth |
-|-----------|--------|-----------|------|
-| `urlhaus` | abuse.ch URLhaus | malicious URLs, domains, IPs | abuse.ch key |
-| `malwarebazaar` | abuse.ch MalwareBazaar | malware file hashes, families | abuse.ch key |
-| `threatfox` | abuse.ch ThreatFox | mixed IOCs + malware | abuse.ch key |
-| `feodo` | abuse.ch Feodo Tracker | botnet C2 IPs | none |
-| `nvd` | NIST NVD | CVE vulnerabilities + CVSS | optional key |
-| `mitre_attack` | MITRE ATT&CK | attack techniques / TTPs | none |
-| `cisa_kev` | CISA KEV catalog | known-exploited CVEs | none |
-| `otx` | AlienVault OTX | pulses → all IOC types | OTX key |
-| `reddit` | Reddit (r/netsec…) | OSINT reports + extracted IOCs | optional OAuth |
-| `rss` | security blogs | OSINT reports + extracted IOCs | none |
-| `twitter` | X/Twitter v2 | OSINT reports + extracted IOCs | **paid** bearer (disabled by default) |
+```bash
+git clone <your-repo-url> ai-threat-intel && cd ai-threat-intel
+cp .env.example .env          # then add your API keys (all optional)
+docker compose up -d --build
+```
 
-STIX output mapping:
-- IOC feeds → `indicator` (STIX pattern) + the matching SCO (`ipv4-addr`,
-  `domain-name`, `url`, `file`) joined by a `based-on` relationship, plus
-  `malware` SDOs and `indicates` relationships where a family is known.
-- CVE feeds → `vulnerability` SDOs (CVSS score/severity as labels).
-- MITRE ATT&CK → native `attack-pattern` / `intrusion-set` / `malware` / `tool`
-  objects and their relationships (the dataset is already STIX 2.1).
-- Text sources (Reddit/RSS/X) → a `report` per document with regex-extracted
-  IOCs as `object_refs`. The downstream LLM stage refines these.
+Open **http://localhost:8000** and sign in with the seeded account:
 
-### Setup
+| Username | Password | Role |
+|----------|----------|------|
+| `admin` | `admin123` | admin |
+| `analyst` | `analyst123` | analyst |
 
-```powershell
+> Change these defaults (and `POSTGRES_PASSWORD`) before exposing the app
+> anywhere outside localhost.
+
+Compose starts three services: the **app** (`:8000`), **PostgreSQL + pgvector**
+(`:5432`), and **ChromaDB** (`:8001`). Connectors and enrichment workers start
+automatically; data flows in within a minute or two.
+
+### LLM provider
+
+The chat agent, report generator and article enricher need an LLM. By default
+the app points at a local **Ollama** on the host (`host.docker.internal:11434`).
+Set the provider, model and any API keys in **Admin → LLM models**, or seed them
+via `.env` (`DEFAULT_LLM_PROVIDER`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, …).
+
+---
+
+## Configuration
+
+All settings live in `.env` (copy from `.env.example`). Every key is optional —
+a connector or enricher missing its key simply logs a warning and stays idle.
+
+| Key | Used by | Get it |
+|-----|---------|--------|
+| `ABUSECH_AUTH_KEY` | URLhaus / MalwareBazaar / ThreatFox / Feodo + hash enrichment | <https://auth.abuse.ch/> |
+| `OTX_API_KEY` | AlienVault OTX | <https://otx.alienvault.com/api> |
+| `NVD_API_KEY` | NVD (raises rate limit) | <https://nvd.nist.gov/developers/request-an-api-key> |
+| `VT_API_KEY` | VirusTotal hash enrichment | <https://www.virustotal.com> |
+| `REDDIT_CLIENT_ID` / `_SECRET` | Reddit (else rate-limited public JSON) | <https://www.reddit.com/prefs/apps> |
+
+> `.env` is gitignored — keep real keys there. `.env.example` is the committed
+> template and ships with empty placeholders.
+
+---
+
+## Local development (without the app container)
+
+```bash
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item .env.example .env   # then fill in API keys
+# Windows: .\.venv\Scripts\python -m pip install -r requirements.txt
+# Unix:    ./.venv/bin/pip install -r requirements.txt
+
+docker compose up -d db chroma          # just the data services
+python -m src.storage.cli init-db       # create the schema
+python -m src.web                        # run the API + SPA on :8000
 ```
 
-API keys (all optional — a connector missing its key logs a warning and idles):
-- **abuse.ch** (`ABUSECH_AUTH_KEY`) — one key for URLhaus/MalwareBazaar/ThreatFox. Free at <https://auth.abuse.ch/>.
-- **NVD** (`NVD_API_KEY`) — optional, raises rate limit. <https://nvd.nist.gov/developers/request-an-api-key>.
-- **OTX** (`OTX_API_KEY`) — free at <https://otx.alienvault.com/api>.
-- **Reddit** (`REDDIT_CLIENT_ID`/`SECRET`) — optional; without it falls back to rate-limited public JSON.
-- **X/Twitter** (`TWITTER_BEARER_TOKEN`) — paid API; disabled by default.
+Storage CLI helpers:
 
-### Run
-
-```powershell
-# list connectors
-python -m src.collectors.runner --list
-
-# one-shot run of everything enabled (writes bundles to data/output/)
-python -m src.collectors.runner --once
-
-# run specific connectors once
-python -m src.collectors.runner --once --connector nvd --connector rss
-
-# dry run (collect + log summary, no files written)
-python -m src.collectors.runner --once --dry-run --connector nvd
-
-# long-running scheduler (each connector loops on its own interval)
-python -m src.collectors.runner
+```bash
+python -m src.storage.cli init-db [--reset]   # --reset drops + recreates (wipes data)
+python -m src.storage.cli stats               # dashboard aggregations
+python -m src.storage.cli search "qakbot"     # keyword search
+python -m src.storage.cli lookup 1.2.3.4      # IOC lookup
 ```
-
-Each cycle writes a STIX bundle to `data/output/<connector>_<timestamp>.json`
-and persists incremental cursors to `data/state/<connector>.json`.
-
-### Adding a connector
-
-1. Create `src/collectors/sources/<name>.py` subclassing `BaseConnector`,
-   implement `collect()` returning a list of STIX objects (use `self.stix`,
-   `self.state`, `self.get_json/post_json/get_text`).
-2. Add a config class in [config.py](src/collectors/config.py).
-3. Register the pair in [registry.py](src/collectors/registry.py).
-
-### Notes / known limitations
-
-- Some feeds sit behind CDN bot protection (e.g. CISA via Akamai,
-  BleepingComputer via Cloudflare) and may return **HTTP 403** from data-center
-  or geo-restricted IPs. The connector code is correct; run from a permitted
-  network or via a proxy. Text connectors skip a failing feed and continue.
-- `mitre_attack` downloads the full Enterprise bundle (~tens of MB) and only
-  re-emits when the content hash changes, so the daily interval is cheap.
 
 ---
 
-## Database access (local dev)
+## Data model
 
-Both `db` and `chroma` services in [docker-compose.yml](docker-compose.yml) bind
-their ports to the host, so any SQL/HTTP client on your machine can connect
-directly — no exec into the container needed. Credentials come from `.env`
-(defaults below match `.env.example`).
+One PostgreSQL database holds both the intelligence and the app state.
 
-| Service | Host:port | Connect with |
-|---------|-----------|--------------|
-| PostgreSQL (TI + app store) | `localhost:5432` | psql / DBeaver / pgAdmin / TablePlus |
-| ChromaDB (article embeddings) | `localhost:8001` | HTTP API at `http://localhost:8001/api/v1` |
+| Tables | Hold |
+|--------|------|
+| `articles`, `iocs`, `cves`, `tags` | collected threat intelligence |
+| `article_iocs`, `article_cves`, `article_tags`, `ioc_relations` | many-to-many links that power the graph |
+| `enrichment_jobs` | background enrichment queue |
+| `users`, `sessions`, `connector_settings`, `retention_policy`, `llm_*` | app / admin state |
 
-```powershell
-# 1. start the data services
-docker compose up -d db chroma
-
-# 2. CLI access — uses default creds (threatintel / threatintel / threatintel)
-docker exec -it ai-threat-intel-db-1 psql -U threatintel -d threatintel
-
-# or from the host directly (needs psql installed locally)
-psql "postgresql://threatintel:threatintel@localhost:5432/threatintel"
-```
-
-GUI clients — point them at `localhost:5432`, database `threatintel`, user
-`threatintel`, password `threatintel`. The single database holds **both** the
-TI data and the app/admin state:
-
-| Table | Holds |
-|-------|-------|
-| `articles` / `iocs` / `cves` / `article_cves` / `tags` / `article_tags` | collected threat intelligence |
-| `users` / `sessions` | SPA accounts + bearer-token sessions |
-| `connector_settings` | per-connector `is_enabled` / `interval_minutes` / last-run status (driven by the admin UI) |
-| `retention_policy` | singleton row, retention windows |
-
-Chroma stores article-content embeddings; query it via the official
-[`chromadb`](https://docs.trychroma.com/) Python client or the REST API. The
-collection name defaults to `articles` (see `CHROMA_COLLECTION` in `.env`).
-
-> The default credentials are **dev-only**. Change `POSTGRES_PASSWORD` and the
-> seeded admin password (`appstore.seed_defaults` → admin/admin123) before
-> exposing this anywhere outside localhost.
+IOCs are globally unique by `(type, value)` and linked to every article that
+references them; `ioc_relations` records discovered infrastructure edges
+(e.g. a domain that resolves to an IP), so the graph can pivot across reports.
+Article content is embedded into ChromaDB for semantic retrieval.
 
 ---
 
-## Storage layer (PostgreSQL + pgvector)
+## Tech stack
 
-The store ([src/storage/](src/storage/)) ingests connector bundles into one
-PostgreSQL database designed to serve three jobs at once:
+Python · FastAPI · SQLAlchemy (async) · PostgreSQL + pgvector · ChromaDB ·
+LangChain (OpenAI / Gemini / Ollama) · vanilla-JS SPA with vis-network.
 
-1. **Dashboard aggregation** — promoted, indexed columns for fast `GROUP BY`.
-2. **Exact IOC lookup** — "is this IP/hash known, and what's it linked to?"
-3. **Agentic RAG** — semantic + keyword retrieval to ground LLM Q&A / report
-   generation in stored intelligence.
+---
 
-### Schema
+## Security notes
 
-| Table | Holds | Notes |
-|-------|-------|-------|
-| `stix_objects` | every SDO/SCO (node in the threat graph) | full object in `raw` (JSONB) + promoted columns (`type`, `value`, `labels`, `severity`, `cvss_score`, `tlp`, dates) + `sources[]` provenance + generated `tsvector` for full-text search |
-| `stix_relationships` | SROs (edges) | indexed on both `source_ref` / `target_ref` for cheap graph pivoting |
-| `embeddings` | one pgvector per text-bearing object | dimension fixed from `EMBEDDING_DIM`; HNSW cosine index |
-| `ingestion_log` | one row per ingested bundle | powers the ingestion timeline |
-
-Dedup is by STIX id (deterministic UUIDv5 from the connectors), so the same IOC
-seen by multiple connectors is one row with merged `sources[]` and a bumped
-`last_seen`.
-
-### Embeddings (pluggable)
-
-Selected by `EMBEDDING_PROVIDER`: `none` (default, disables semantic search) ·
-`local` (sentence-transformers, needs `pip install sentence-transformers`) ·
-`openai` · `voyage`. The embedder is resolved lazily, so nothing heavy is
-imported unless you opt in. `EMBEDDING_DIM` **must** match the model.
-
-### Run
-
-```powershell
-# 1. start PostgreSQL+pgvector (compose) — or your own instance
-docker compose up -d db
-
-# 2. create extension, tables, vector index
-python -m src.storage.cli init-db
-
-# 3a. let connectors write straight to the DB...
-python -m src.collectors.runner --once --output db
-# 3b. ...or ingest previously written bundle files
-python -m src.storage.cli ingest --dir data/output
-
-# explore
-python -m src.storage.cli stats
-python -m src.storage.cli search "qakbot c2 infrastructure"   # --mode hybrid|semantic|keyword
-python -m src.storage.cli lookup 1.2.3.4
-python -m src.storage.cli backfill-embeddings                 # after enabling a provider
-```
-
-`DATABASE_URL` (async, psycopg driver) configures the connection; see
-`.env.example`. On Windows the CLIs force a `SelectorEventLoop` (psycopg async
-requirement) via [src/utils/aiorun.py](src/utils/aiorun.py).
-
-### Using the store from code (e.g. the agentic layer)
-
-```python
-from src.storage import Retriever, DashboardQueriesa
-
-retr = Retriever()
-context = await retr.context_for_query("recent Emotet C2 servers")  # hits + 1-hop graph
-ioc = await retr.lookup_observable("203.0.113.10")                  # exact + neighbors
-stats = await DashboardQueries().overview()
-```
-
-`Retriever` exposes `semantic_search`, `keyword_search`, `hybrid_search` (RRF
-fusion), `lookup_observable`, `neighbors`, and `context_for_query` — the
-building blocks for the Q&A / report-generation agent.
+Default credentials and the sample database password are **for local dev only**.
+This is a single-tenant tool; do not expose it to untrusted networks without
+changing the secrets and putting it behind proper authentication.
