@@ -12,11 +12,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..storage.database import get_sessionmaker
-from ..storage.models import Article, EnrichmentJob
+from ..storage.models import Article, CVE, EnrichmentJob, IOC
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,76 @@ async def enqueue_article_jobs(enricher: str, limit: int = 500) -> int:
             )
         )
         result = await session.execute(stmt)
-        return result.rowcount or 0
+        # psycopg can report rowcount as -1 for INSERT … ON CONFLICT DO NOTHING
+        # when it can't reliably count the skipped rows; clamp to 0 so callers
+        # (and the scanner log) never see a negative "inserted" count.
+        rowcount = result.rowcount
+        return rowcount if isinstance(rowcount, int) and rowcount > 0 else 0
+
+
+async def enqueue_ioc_jobs(enricher: str, limit: int = 500) -> int:
+    """Add a pending job for every IOC still missing its ``enrichment`` payload.
+
+    Mirrors :func:`enqueue_article_jobs`: idempotent via the unique
+    (target_type, target_id, enricher) constraint. Returns rows inserted.
+    """
+    sm = get_sessionmaker()
+    async with sm() as session, session.begin():
+        # "Un-enriched" means SQL NULL *or* a JSONB ``null`` literal — connectors
+        # persist the latter when an IOCRecord carries no enrichment, and it must
+        # still count as a to-do or the scanner would never queue these rows.
+        ioc_q = (
+            select(IOC.id)
+            .where(or_(IOC.enrichment.is_(None), IOC.enrichment == text("'null'::jsonb")))
+            .order_by(IOC.id.desc())
+            .limit(limit)
+        )
+        rows = (await session.execute(ioc_q)).scalars().all()
+        if not rows:
+            return 0
+
+        stmt = (
+            pg_insert(EnrichmentJob)
+            .values([
+                {"target_type": "ioc", "target_id": str(rid), "enricher": enricher}
+                for rid in rows
+            ])
+            .on_conflict_do_nothing(constraint="uq_enrichment_target")
+        )
+        result = await session.execute(stmt)
+        rowcount = result.rowcount
+        return rowcount if isinstance(rowcount, int) and rowcount > 0 else 0
+
+
+async def enqueue_cve_jobs(enricher: str, limit: int = 500) -> int:
+    """Add a pending job for every CVE still missing its ``enrichment`` payload.
+
+    Mirrors :func:`enqueue_ioc_jobs`: idempotent via the unique
+    (target_type, target_id, enricher) constraint. Returns rows inserted.
+    """
+    sm = get_sessionmaker()
+    async with sm() as session, session.begin():
+        cve_q = (
+            select(CVE.cve_id)
+            .where(or_(CVE.enrichment.is_(None), CVE.enrichment == text("'null'::jsonb")))
+            .order_by(CVE.published_date.desc().nulls_last())
+            .limit(limit)
+        )
+        rows = (await session.execute(cve_q)).scalars().all()
+        if not rows:
+            return 0
+
+        stmt = (
+            pg_insert(EnrichmentJob)
+            .values([
+                {"target_type": "cve", "target_id": cid, "enricher": enricher}
+                for cid in rows
+            ])
+            .on_conflict_do_nothing(constraint="uq_enrichment_target")
+        )
+        result = await session.execute(stmt)
+        rowcount = result.rowcount
+        return rowcount if isinstance(rowcount, int) and rowcount > 0 else 0
 
 
 # -- claim / complete / fail ---------------------------------------------

@@ -27,24 +27,26 @@ logger = logging.getLogger(__name__)
 
 # Curated, opinionated model lists. Free-form override is always allowed by
 # typing an arbitrary id into the admin UI's "model" field; this list just
-# powers the dropdown / suggestions.
+# powers the dropdown / suggestions. The first entry in each list is the
+# recommended starting point and matches ``DEFAULT_MODELS`` in providers.py.
 AVAILABLE_MODELS: dict[str, list[dict[str, str]]] = {
     "openai": [
-        {"id": "gpt-4o-mini", "label": "gpt-4o-mini — cheap, fast, good tool calling"},
-        {"id": "gpt-4o",      "label": "gpt-4o — flagship, best reasoning"},
-        {"id": "gpt-4.1-mini","label": "gpt-4.1-mini — cheap, large context"},
-        {"id": "o3-mini",     "label": "o3-mini — reasoning, slower"},
+        {"id": "gpt-5.4",      "label": "gpt-5.4 — default (custom endpoint compatible)"},
+        {"id": "gpt-4o-mini",  "label": "gpt-4o-mini — cheap, fast, good tool calling"},
+        {"id": "gpt-4o",       "label": "gpt-4o — flagship, best reasoning"},
+        {"id": "gpt-4.1-mini", "label": "gpt-4.1-mini — cheap, large context"},
+        {"id": "o3-mini",      "label": "o3-mini — reasoning, slower"},
     ],
     "gemini": [
-        {"id": "gemini-1.5-flash",  "label": "gemini-1.5-flash — cheap, generous free tier"},
+        {"id": "gemini-1.5-flash",  "label": "gemini-1.5-flash — default, cheap, generous free tier"},
         {"id": "gemini-1.5-pro",    "label": "gemini-1.5-pro — frontier, slower"},
         {"id": "gemini-2.0-flash",  "label": "gemini-2.0-flash — newer, fast"},
     ],
     "ollama": [
-        {"id": "llama3.2",        "label": "llama3.2 (3B) — small, fast, good for batch"},
-        {"id": "llama3.1:8b",     "label": "llama3.1:8b — solid all-rounder"},
-        {"id": "qwen2.5:7b",      "label": "qwen2.5:7b — strong tool calling"},
-        {"id": "mistral-nemo",    "label": "mistral-nemo (12B) — best local for agent"},
+        {"id": "qwen2.5-coder:3b", "label": "qwen2.5-coder:3b — default, code-aware (3B)"},
+        {"id": "qwen3.5:2b",       "label": "qwen3.5:2b — newer, tiny"},
+        {"id": "llama3.2:3b",      "label": "llama3.2:3b — small, fast, good for batch"},
+        {"id": "codellama:7b",     "label": "codellama:7b — code-specialised"},
     ],
 }
 
@@ -67,48 +69,38 @@ FUNCTIONS: list[dict[str, str]] = [
     },
 ]
 
-# Operator-facing presets. Returned by the admin endpoint so the UI can offer
-# one-click application. Numbers are rough USD/MTok estimates (input) for the
-# OpenAI tier; everything else is informational.
+# Operator-facing presets — applied by the admin UI in one click. Models below
+# match ``AVAILABLE_MODELS``; ``"model": None`` falls back to the provider's
+# ``default_model`` stored in ``llm_providers``.
 PRESETS: list[dict[str, Any]] = [
     {
-        "id": "budget",
-        "label": "Budget — all local (free)",
-        "hint": "Runs everything through a local Ollama model. Free, slower; tool calling depends on the chosen model supporting it.",
+        "id": "local",
+        "label": "Local — all Ollama (free)",
+        "hint": "Every function routed to the local Ollama default. Free and offline; quality depends on the picked model.",
         "assignments": {
-            "agent_chat":     {"provider": "ollama", "model": "qwen2.5:7b"},
-            "report":         {"provider": "ollama", "model": "llama3.1:8b"},
-            "enrich_article": {"provider": "ollama", "model": "llama3.2"},
+            "agent_chat":     {"provider": "ollama", "model": None},
+            "report":         {"provider": "ollama", "model": None},
+            "enrich_article": {"provider": "ollama", "model": None},
         },
     },
     {
         "id": "balanced",
         "label": "Balanced — paid where it matters",
-        "hint": "Frontier model for the agent (tool calls + chat), cheap paid for reports, local for bulk article enrichment.",
+        "hint": "OpenAI for the interactive paths (agent + report), local Ollama for bulk article enrichment.",
         "assignments": {
-            "agent_chat":     {"provider": "openai", "model": "gpt-4o-mini"},
-            "report":         {"provider": "openai", "model": "gpt-4o-mini"},
-            "enrich_article": {"provider": "ollama", "model": "llama3.2"},
+            "agent_chat":     {"provider": "openai", "model": None},
+            "report":         {"provider": "openai", "model": None},
+            "enrich_article": {"provider": "ollama", "model": None},
         },
     },
     {
-        "id": "premium",
-        "label": "Premium — best quality",
-        "hint": "Frontier across the board. Best answers, highest cost.",
+        "id": "cloud",
+        "label": "Cloud — all OpenAI",
+        "hint": "Frontier on every slot. Highest quality, highest cost.",
         "assignments": {
-            "agent_chat":     {"provider": "openai", "model": "gpt-4o"},
-            "report":         {"provider": "openai", "model": "gpt-4o"},
-            "enrich_article": {"provider": "openai", "model": "gpt-4o-mini"},
-        },
-    },
-    {
-        "id": "privacy",
-        "label": "Privacy — never leaves the host",
-        "hint": "All inference on local Ollama. Pick a bigger model for the agent if your GPU can run it.",
-        "assignments": {
-            "agent_chat":     {"provider": "ollama", "model": "mistral-nemo"},
-            "report":         {"provider": "ollama", "model": "llama3.1:8b"},
-            "enrich_article": {"provider": "ollama", "model": "llama3.2"},
+            "agent_chat":     {"provider": "openai", "model": None},
+            "report":         {"provider": "openai", "model": None},
+            "enrich_article": {"provider": "openai", "model": None},
         },
     },
 ]

@@ -140,6 +140,9 @@ class TIAgent:
         tool = TOOLS_BY_NAME.get(name)
         if tool is None:
             return {"error": f"unknown tool '{name}'"}, False
+        # Small open-source models often pass extra args meant for sibling
+        # tools or stringify numbers. Coerce + drop-unknown before validating.
+        args = _coerce_tool_args(tool, args)
         try:
             return await tool.ainvoke(args), True
         except Exception as exc:  # noqa: BLE001 — tool failures must not crash the agent
@@ -149,6 +152,49 @@ class TIAgent:
 
 
 # --- helpers --------------------------------------------------------------
+def _coerce_tool_args(tool, args: dict[str, Any]) -> dict[str, Any]:
+    """Make tool args resilient to small-model quirks.
+
+    Small open-source models routinely (a) pass extra args meant for a sibling
+    tool and (b) stringify numeric values (``"10"`` instead of ``10``). Strict
+    Pydantic validation then rejects the whole call. We look up the tool's
+    declared arg schema and:
+
+    * drop keys the tool does not declare;
+    * coerce stringy ints/floats to their declared numeric type.
+
+    Anything else passes through untouched so genuine validation errors still
+    surface as ``ok=False`` tool results that the model can react to.
+    """
+    schema = getattr(tool, "args", None) or {}
+    if not schema:
+        return args
+    out: dict[str, Any] = {}
+    for key, value in args.items():
+        spec = schema.get(key)
+        if spec is None:
+            continue  # drop unknown keys
+        expected = spec.get("type") if isinstance(spec, dict) else None
+        # Some weak models echo the JSON-Schema descriptor as the value
+        # (``{"type": "integer"}`` instead of ``10``). Drop those so the
+        # argument's default kicks in instead of failing validation.
+        if isinstance(value, dict) and expected in {"integer", "number", "string"}:
+            continue
+        if isinstance(value, str):
+            if expected == "integer":
+                try:
+                    value = int(value)
+                except (TypeError, ValueError):
+                    pass
+            elif expected == "number":
+                try:
+                    value = float(value)
+                except (TypeError, ValueError):
+                    pass
+        out[key] = value
+    return out
+
+
 def _stringify(content: Any) -> str:
     if isinstance(content, str):
         return content

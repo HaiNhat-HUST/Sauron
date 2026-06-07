@@ -1,1 +1,0 @@
-ioc extraction process

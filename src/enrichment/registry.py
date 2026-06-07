@@ -7,10 +7,14 @@ class and adding one line to ``_REGISTRY``.
 from __future__ import annotations
 
 from .base import BaseEnricher
+from .enrichers.cve_epss import CVEEPSSEnricher
+from .enrichers.ioc_basic import IOCBasicEnricher
 from .enrichers.llm_article import LLMArticleEnricher
 
 _REGISTRY: dict[str, type[BaseEnricher]] = {
     LLMArticleEnricher.name: LLMArticleEnricher,
+    IOCBasicEnricher.name: IOCBasicEnricher,
+    CVEEPSSEnricher.name: CVEEPSSEnricher,
 }
 
 

@@ -12,7 +12,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from langchain_core.tools import tool
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 
 from ..storage.database import get_sessionmaker
 from ..storage.models import (
@@ -124,12 +124,16 @@ async def find_by_tag(name: str, limit: int = 10) -> dict:
         return {"tags": [], "articles": [], "iocs": []}
     sm = get_sessionmaker()
     async with sm() as s:
+        # Match the dedup name OR the human label, so "phishing" still finds
+        # technique T1566 even though its name is now the bare code.
+        like = f"%{name}%"
         tag_rows = (
             await s.execute(
-                select(Tag.id, Tag.name, Tag.type).where(Tag.name.ilike(f"%{name}%"))
+                select(Tag.id, Tag.name, Tag.type, Tag.label)
+                .where(or_(Tag.name.ilike(like), Tag.label.ilike(like)))
             )
         ).all()
-        tag_ids = [tid for tid, _, _ in tag_rows]
+        tag_ids = [tid for tid, _, _, _ in tag_rows]
         articles: list[dict] = []
         iocs: list[dict] = []
         if tag_ids:
@@ -167,7 +171,7 @@ async def find_by_tag(name: str, limit: int = 10) -> dict:
                 for t, v, tags, src, seen in irows
             ]
     return {
-        "tags": [{"name": n, "type": t} for _, n, t in tag_rows],
+        "tags": [{"name": n, "type": t, "label": lbl} for _, n, t, lbl in tag_rows],
         "articles": articles,
         "iocs": iocs,
     }

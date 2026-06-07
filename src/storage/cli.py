@@ -77,7 +77,8 @@ async def _lookup(args) -> None:
 async def _dispatch(args) -> None:
     try:
         if args.command == "init-db":
-            await init_db(); print("schema initialised")
+            await init_db(reset=args.reset)
+            print("schema reset + initialised" if args.reset else "schema initialised")
         elif args.command == "ingest":
             await _ingest(args)
         elif args.command == "stats":
@@ -95,7 +96,9 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
     p = argparse.ArgumentParser(description="ai-threat-intel storage CLI")
     sub = p.add_subparsers(dest="command", required=True)
-    sub.add_parser("init-db", help="create tables")
+    pdb = sub.add_parser("init-db", help="create tables")
+    pdb.add_argument("--reset", action="store_true",
+                     help="DROP all tables first, then recreate (wipes all data)")
     pi = sub.add_parser("ingest", help="load CollectionResult json files into the DB")
     pi.add_argument("--dir", default="data/output")
     pi.add_argument("--source", default=None)

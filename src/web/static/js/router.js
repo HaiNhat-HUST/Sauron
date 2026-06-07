@@ -1,7 +1,10 @@
 // Hash-based client-side router for the SPA.
 
 import { isAdmin, isAuthed } from "./api.js";
-import * as adminView from "./views/admin.js";
+import * as adminConnectorsView from "./views/admin-connectors.js";
+import * as adminLLMView from "./views/admin-llm.js";
+import * as adminUsersView from "./views/admin-users.js";
+import * as articlesView from "./views/articles.js";
 import * as chatView from "./views/chat.js";
 import * as dashboardView from "./views/dashboard.js";
 import * as loginView from "./views/login.js";
@@ -9,8 +12,11 @@ import * as loginView from "./views/login.js";
 const routes = {
   login: { view: loginView, auth: false, body: "page-auth" },
   dashboard: { view: dashboardView, auth: true, body: "page-app" },
+  articles: { view: articlesView, auth: true, body: "page-app" },
   chat: { view: chatView, auth: true, body: "page-app" },
-  admin: { view: adminView, auth: true, adminOnly: true, body: "page-app" },
+  "admin-connectors": { view: adminConnectorsView, auth: true, adminOnly: true, body: "page-app" },
+  "admin-llm": { view: adminLLMView, auth: true, adminOnly: true, body: "page-app" },
+  "admin-users": { view: adminUsersView, auth: true, adminOnly: true, body: "page-app" },
 };
 
 let _cleanup = null;
@@ -27,6 +33,7 @@ export async function renderRoute() {
 
   let key = currentKey();
   if (!key) key = isAuthed() ? "dashboard" : "login";
+  if (key === "admin") return void (location.hash = "#/admin-connectors");
   const route = routes[key] || routes.dashboard;
 
   // Route guards.

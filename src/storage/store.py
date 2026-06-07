@@ -24,7 +24,7 @@ from ..collectors.records import (
 )
 from .config import StorageConfig, storage_config
 from .database import get_sessionmaker
-from .models import Article, ArticleCVE, ArticleTag, CVE, IOC, Tag
+from .models import Article, ArticleCVE, ArticleIOC, ArticleTag, CVE, IOC, Tag
 from .vector import VectorStore, get_vector_store
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,8 @@ class Store:
             for ioc in result.iocs:
                 await self._upsert_ioc(session, ioc, None, source_type)
                 stats["iocs"] += 1
+            # Standalone IOCs share the dedup table with article-bound ones, so
+            # there is no separate link step here.
 
             # Articles + their extracted entities.
             for article in result.articles:
@@ -85,7 +87,9 @@ class Store:
                         },
                     })
                 for ioc in article.iocs:
-                    await self._upsert_ioc(session, ioc, article_id, source_type)
+                    ioc_id = await self._upsert_ioc(session, ioc, article_id, source_type)
+                    if ioc_id is not None:
+                        await self._link_article_ioc(session, article_id, ioc_id, ioc.context)
                     stats["iocs"] += 1
                 for cve_id in article.cves:
                     await self._upsert_cve_stub(session, cve_id)
@@ -136,15 +140,22 @@ class Store:
     # -- iocs --------------------------------------------------------------
     async def _upsert_ioc(
         self, session: AsyncSession, ioc: IOCRecord, article_id: int | None, source_type: str
-    ) -> None:
+    ) -> int | None:
+        """Upsert an IOC keyed on (ioc_type, value) and return its row id.
+
+        The ``ON CONFLICT … DO UPDATE … RETURNING id`` is what guarantees the
+        dedup invariant: the same indicator always resolves to a single row, so
+        the article ↔ IOC links can never point at a duplicate. ``article_id`` is
+        accepted only to keep the call site symmetric — the link itself is
+        written separately via :meth:`_link_article_ioc`.
+        """
         value = (ioc.value or "").strip()
         if not value or ioc.ioc_type not in ("ip", "domain", "url", "email", "hash"):
-            return
+            return None
         now = _now()
         values = {
             "ioc_type": ioc.ioc_type,
             "value": value,
-            "article_id": article_id,
             "source_type": source_type,
             "first_seen": ioc.first_seen or now,
             "last_seen": ioc.last_seen or now,
@@ -160,14 +171,24 @@ class Store:
                 # Keep the earliest first_seen, advance last_seen.
                 "first_seen": func.least(IOC.first_seen, stmt.excluded.first_seen),
                 "last_seen": func.greatest(IOC.last_seen, stmt.excluded.last_seen),
-                # Don't lose an existing article link / context to a NULL.
-                "article_id": func.coalesce(IOC.article_id, stmt.excluded.article_id),
                 "source_type": func.coalesce(IOC.source_type, stmt.excluded.source_type),
                 "context": func.coalesce(IOC.context, stmt.excluded.context),
                 "score": func.greatest(IOC.score, stmt.excluded.score),
                 "enrichment": func.coalesce(stmt.excluded.enrichment, IOC.enrichment),
                 "tags": _merge_tags("iocs"),
             },
+        ).returning(IOC.id)
+        return (await session.execute(stmt)).scalar_one()
+
+    async def _link_article_ioc(
+        self, session: AsyncSession, article_id: int, ioc_id: int, context: str | None
+    ) -> None:
+        """Record that ``article_id`` referenced ``ioc_id`` (idempotent)."""
+        stmt = pg_insert(ArticleIOC).values(
+            article_id=article_id, ioc_id=ioc_id, context=context
+        )
+        stmt = stmt.on_conflict_do_nothing(
+            index_elements=[ArticleIOC.article_id, ArticleIOC.ioc_id]
         )
         await session.execute(stmt)
 
@@ -223,9 +244,17 @@ class Store:
     # -- tags --------------------------------------------------------------
     async def _upsert_tag(self, session: AsyncSession, tag: TagRecord) -> int:
         name = (tag.name or "").strip()
-        stmt = pg_insert(Tag).values(name=name, type=tag.type)
+        label = (tag.label or "").strip() or None
+        stmt = pg_insert(Tag).values(name=name, type=tag.type, label=label)
         stmt = stmt.on_conflict_do_update(
-            index_elements=[Tag.name], set_={"type": stmt.excluded.type}
+            index_elements=[Tag.name],
+            set_={
+                "type": stmt.excluded.type,
+                # Keep an existing label rather than overwriting it with NULL,
+                # so a source that knows the name (MITRE/OTX) wins over one that
+                # doesn't (the enricher emits techniques as bare codes).
+                "label": func.coalesce(stmt.excluded.label, Tag.label),
+            },
         ).returning(Tag.id)
         return (await session.execute(stmt)).scalar_one()
 

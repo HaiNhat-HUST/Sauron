@@ -75,15 +75,17 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 100vh;
   padding: 40px 20px;
 }
 
 .auth-shell {
   width: min(1100px, 100%);
+  margin: 0 auto;
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
   gap: 32px;
-  align-items: stretch;
+  align-items: center;
 }
 
 .auth-hero {
@@ -163,6 +165,7 @@ textarea {
 
 .panel {
   width: 100%;
+  max-width: 420px;
   background: var(--panel-solid);
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
@@ -347,6 +350,45 @@ textarea {
   border-radius: 999px;
   background: var(--sand);
   color: #1d1c19;
+}
+
+.nav-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nav-toggle > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.nav-toggle > summary::-webkit-details-marker {
+  display: none;
+}
+
+.nav-caret {
+  transition: transform 0.2s ease;
+  font-size: 12px;
+}
+
+.nav-toggle[open] > summary .nav-caret {
+  transform: rotate(180deg);
+}
+
+.nav-submenu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 12px;
+  margin-top: 12px;
+  border-left: 1px solid var(--line);
+}
+
+.nav-link.nav-sub {
+  padding: 9px 14px;
+  font-size: 14px;
 }
 
 .sidebar-footer {
@@ -669,6 +711,97 @@ textarea {
   border-color: #cfe4e1;
 }
 
+/* --- Chat composer (prompt input) -------------------------------------- */
+.chat-composer {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 8px 8px 8px 16px;
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 2px rgba(29, 28, 25, 0.04);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Focus-within lifts the whole composer to match the accent language. */
+.chat-composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 6px 20px rgba(255, 107, 53, 0.14);
+}
+
+.chat-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  resize: none;
+  padding: 8px 0;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.chat-input:focus {
+  outline: none;
+}
+
+.chat-input::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.chat-send {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #1d1c19;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.chat-send:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(255, 107, 53, 0.35);
+}
+
+.chat-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.chat-send-icon {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.chat-hint {
+  margin-top: 8px;
+  padding-left: 4px;
+  font-size: 11px;
+}
+
+.chat-hint kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: #faf6ea;
+  color: var(--ink);
+}
+
 .chip-list {
   display: flex;
   flex-wrap: wrap;
@@ -795,15 +928,349 @@ textarea {
 .report-card a { color: var(--accent); text-decoration: underline; }
 
 .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: #ffffff;
   font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
+
+.chip:hover {
+  background: #fffaf0;
+}
+
+.chip-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  background: var(--accent);
+  color: #1d1c19;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.link-button:hover { color: #b94a2f; }
 
 .is-hidden {
   display: none !important;
+}
+
+/* --- Articles page (news feed + relationship graph) --------------------- */
+.articles-shell {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* When a graph is open, split the view roughly in half. */
+.articles-shell.has-graph {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.articles-search {
+  max-width: 280px;
+}
+
+.feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.feed-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel-solid);
+  padding: 16px 18px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.feed-item:hover {
+  border-color: var(--teal);
+  box-shadow: 0 8px 20px rgba(29, 28, 25, 0.08);
+}
+
+.feed-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.feed-item.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 8px 20px rgba(255, 107, 53, 0.18);
+}
+
+.feed-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.feed-item-head h3 {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.feed-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.feed-summary {
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.feed-item-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.feed-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.graph-panel {
+  position: sticky;
+  top: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: calc(100vh - 32px);
+}
+
+.graph-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.graph-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Legend doubles as a click-to-toggle group filter. */
+.graph-filter-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.graph-filter-item:hover {
+  border-color: var(--accent);
+}
+
+/* A filtered-out group: dimmed + struck through. */
+.graph-filter-item.is-off {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+/* A group with no nodes currently in the graph. */
+.graph-filter-item.is-absent {
+  opacity: 0.3;
+  cursor: default;
+}
+.graph-filter-item.is-absent:hover {
+  border-color: var(--line);
+}
+
+.graph-filter-all {
+  font-weight: 600;
+}
+.graph-filter-all.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1d1c19;
+}
+
+.graph-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+
+.graph-canvas {
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: radial-gradient(circle at 30% 20%, #fffdf7, #f4efe4);
+}
+
+.graph-status {
+  min-height: 16px;
+}
+
+/* vis-network injects tooltips with the .vis-tooltip class on <body>. */
+.vis-tooltip {
+  position: absolute;
+  background: #ffffff !important;
+  border: 1px solid var(--line) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--shadow);
+  padding: 0 !important;
+  font-family: var(--font) !important;
+  color: var(--ink) !important;
+  max-width: 320px;
+  white-space: normal !important;
+  z-index: 30;
+}
+
+.graph-tip {
+  padding: 12px 14px;
+}
+
+.graph-tip-kind {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.graph-tip-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 2px;
+}
+
+.graph-tip-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.graph-tip-meta b {
+  color: var(--ink);
+  font-weight: 600;
+  margin-right: 3px;
+}
+
+.graph-tip-kev {
+  color: #b94a2f;
+  font-weight: 600;
+}
+
+.graph-tip-summary {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.graph-tip-muted {
+  font-style: italic;
+}
+
+/* Right-click "Extend" context menu, positioned inside the graph panel. */
+.graph-menu {
+  position: absolute;
+  z-index: 40;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 4px;
+  min-width: 150px;
+}
+
+.graph-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.graph-menu button:hover:not([disabled]) {
+  background: #fff3ec;
+  color: var(--accent);
+}
+
+.graph-menu button[disabled] {
+  color: var(--muted);
+  cursor: default;
+}
+
+.graph-menu-danger:hover:not([disabled]) {
+  background: #fbe7e0 !important;
+  color: #b94a2f !important;
+}
+
+.graph-menu-confirm {
+  padding: 8px 12px 6px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.graph-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .reveal {
@@ -859,6 +1326,15 @@ textarea {
 
   .chat-shell {
     grid-template-columns: 1fr;
+  }
+
+  .articles-shell.has-graph {
+    grid-template-columns: 1fr;
+  }
+
+  .graph-panel {
+    position: relative;
+    height: 70vh;
   }
 }
 

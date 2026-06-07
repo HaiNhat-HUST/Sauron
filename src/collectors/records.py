@@ -50,9 +50,10 @@ class CVERecord:
 
 @dataclass
 class TagRecord:
-    name: str
+    name: str                           # dedup key — bare T-code for techniques
     type: str                           # one of TAG_TYPES
     confidence: float = 0.5             # used when linked to an article
+    label: str | None = None            # human-readable display name (optional)
 
 
 @dataclass

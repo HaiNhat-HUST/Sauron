@@ -19,7 +19,7 @@ import logging
 import os
 
 from . import jobs
-from .registry import available, build_enricher
+from .registry import available, build_enricher, target_type_of
 
 logger = logging.getLogger("enrichment.worker")
 
@@ -71,9 +71,16 @@ class EnrichmentWorker:
         while not self._stopped:
             try:
                 for name in available():
-                    # Only article enrichers known so far — extend when adding
-                    # IOC/CVE scanners.
-                    inserted = await jobs.enqueue_article_jobs(name, limit=500)
+                    # Route to the right enqueue helper by the enricher's target.
+                    target = target_type_of(name)
+                    if target == "article":
+                        inserted = await jobs.enqueue_article_jobs(name, limit=500)
+                    elif target == "ioc":
+                        inserted = await jobs.enqueue_ioc_jobs(name, limit=500)
+                    elif target == "cve":
+                        inserted = await jobs.enqueue_cve_jobs(name, limit=500)
+                    else:
+                        continue  # no scanner for this target type yet
                     if inserted:
                         logger.info("enqueued %d %s jobs", inserted, name)
             except asyncio.CancelledError:

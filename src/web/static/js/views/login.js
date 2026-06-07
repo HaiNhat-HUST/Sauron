@@ -54,7 +54,7 @@ export function mount() {
         body: JSON.stringify({ username, password }),
       });
       saveSession(payload.token, payload.user);
-      location.hash = payload.user.role === "admin" ? "#/admin" : "#/dashboard";
+      location.hash = payload.user.role === "admin" ? "#/admin-connectors" : "#/dashboard";
     } catch (error) {
       setStatus(statusEl, error.message || "Login failed", true);
     }

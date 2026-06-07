@@ -48,13 +48,21 @@ class MitreAttackConnector(BaseConnector):
             if not tag_type or obj.get("revoked") or obj.get("x_mitre_deprecated"):
                 continue
             name = obj.get("name")
-            if not name or name in seen:
+            if not name:
                 continue
-            seen.add(name)
-            # Prefix techniques with their ATT&CK id when available (T1059 ...).
             attack_id = _attack_id(obj)
-            display = f"{attack_id} {name}" if attack_id else name
-            result.tags.append(TagRecord(name=display, type=tag_type))
+            # Techniques are keyed on their bare ATT&CK code so every source
+            # (this feed, OTX, the LLM enricher) maps to one tag row; the human
+            # name is carried separately as the display label. Other object
+            # types have no stable code, so the name stays the key.
+            if tag_type == "attack_technique" and attack_id:
+                key, label = attack_id, name
+            else:
+                key, label = name, None
+            if key in seen:
+                continue
+            seen.add(key)
+            result.tags.append(TagRecord(name=key, type=tag_type, label=label))
 
         self.state.set("bundle_sha256", digest)
         self.log.info("MITRE ATT&CK (%s): %d taxonomy tags", domain, len(result.tags))

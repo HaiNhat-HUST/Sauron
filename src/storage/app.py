@@ -152,7 +152,13 @@ async def seed_defaults() -> None:
         # Bootstrap LLM provider rows. Pre-populate from env vars if set so
         # existing deployments transition smoothly to DB-driven config. New
         # users start with everything disabled and configure via the admin UI.
+        # Model defaults come from src.llm.providers.DEFAULT_MODELS — that's
+        # the single source of truth. Env vars (OPENAI_MODEL / GEMINI_MODEL /
+        # OLLAMA_MODEL) let an operator override per provider on first boot.
+        from ..llm.providers import DEFAULT_MODELS, DEFAULT_OLLAMA_BASE_URL
+
         env_openai_key = os.getenv("OPENAI_API_KEY") or ""
+        env_openai_base = os.getenv("OPENAI_BASE_URL") or None
         env_google_key = os.getenv("GOOGLE_API_KEY") or ""
         env_default_provider = (os.getenv("DEFAULT_LLM_PROVIDER") or "").lower()
         provider_seeds = [
@@ -160,22 +166,22 @@ async def seed_defaults() -> None:
                 "name": "openai",
                 "enabled": bool(env_openai_key),
                 "api_key": env_openai_key or None,
-                "base_url": None,
-                "default_model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                "base_url": env_openai_base,
+                "default_model": os.getenv("OPENAI_MODEL", DEFAULT_MODELS["openai"]),
             },
             {
                 "name": "gemini",
                 "enabled": bool(env_google_key),
                 "api_key": env_google_key or None,
                 "base_url": None,
-                "default_model": os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+                "default_model": os.getenv("GEMINI_MODEL", DEFAULT_MODELS["gemini"]),
             },
             {
                 "name": "ollama",
                 "enabled": env_default_provider == "ollama",
                 "api_key": None,
-                "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-                "default_model": os.getenv("OLLAMA_MODEL", "llama3.2"),
+                "base_url": os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL),
+                "default_model": os.getenv("OLLAMA_MODEL", DEFAULT_MODELS["ollama"]),
             },
         ]
         for row in provider_seeds:

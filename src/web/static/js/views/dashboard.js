@@ -55,17 +55,6 @@ function content() {
       </section>
     </div>
 
-    <section class="section reveal">
-      <div class="section-head">
-        <div class="section-title">Recent articles</div>
-        <div class="small-note">Latest collected OSINT</div>
-      </div>
-      <table class="table">
-        <thead><tr><th>Title</th><th>Source</th><th>Published</th></tr></thead>
-        <tbody id="articles-body"></tbody>
-      </table>
-    </section>
-
     <div class="grid-2">
       <section class="section reveal">
         <div class="section-head"><div class="section-title">Recent IOCs</div></div>
@@ -140,18 +129,6 @@ export async function mount() {
       (t) => `<div class="list-item"><span>${esc(t.name)} <span class="small-note">${esc(t.type)}</span></span><span class="badge">${num(t.count)}</span></div>`));
     setHTML("severity-list", simpleList(data.cve_severity,
       (i) => `<div class="list-item">${severityBadge(i.severity)}<strong>${num(i.count)}</strong></div>`));
-
-    const tbody = document.getElementById("articles-body");
-    if (tbody) {
-      tbody.innerHTML = (data.recent_articles || []).length
-        ? data.recent_articles.map((a) => {
-            const title = a.url
-              ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc((a.title || "").slice(0, 90))}</a>`
-              : esc((a.title || "").slice(0, 90));
-            return `<tr><td>${title}</td><td>${esc(a.source_name || a.source_type || "—")}</td><td>${dateShort(a.published_date)}</td></tr>`;
-          }).join("")
-        : `<tr><td colspan="3" class="small-note">No articles collected yet</td></tr>`;
-    }
 
     setHTML("iocs-list", simpleList(data.recent_iocs, (i) => {
       const tags = (i.tags || []).slice(0, 2).map((t) => `<span class="badge">${esc(t)}</span>`).join(" ");

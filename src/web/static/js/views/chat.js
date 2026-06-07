@@ -86,12 +86,13 @@ function content() {
             <div class="list-item"><span>Report synthesis</span><span class="badge">structured</span></div>
           </div>
           <div style="margin-top: 18px;">
-            <h4>Suggested prompts</h4>
-            <div class="chip-list" style="margin-top: 10px;">
-              <span class="chip" data-prompt>Summarize LockBit activity in the last 30 days</span>
-              <span class="chip" data-prompt>What do we know about CVE-2024-1234?</span>
-              <span class="chip" data-prompt>List recent ransomware C2 IPs</span>
-              <span class="chip" data-prompt>Show stats for the TI store</span>
+            <div style="display:flex; align-items:baseline; justify-content:space-between;">
+              <h4 style="margin:0;">Suggested prompts</h4>
+              <button class="link-button" id="suggestions-refresh" type="button" title="Refresh from live data">refresh</button>
+            </div>
+            <p class="small-note" style="margin: 6px 0 10px;">Generated from the entities the TI store currently knows about.</p>
+            <div class="chip-list" id="suggestion-chips" style="margin-top: 10px;">
+              <span class="small-note">Loading…</span>
             </div>
           </div>
           <div style="margin-top: 18px;">
@@ -111,10 +112,16 @@ function content() {
                 <div class="md">Ask about indicators, CVEs, campaigns, tags, or recent activity. I'll ground every answer in the collected intelligence.</div>
               </div>
             </div>
-            <form id="chat-form" style="margin-top: 16px; display: grid; gap: 10px;">
-              <textarea id="chat-input" placeholder="Ask a threat intel question..."></textarea>
-              <button class="button" type="submit">Send</button>
+            <form id="chat-form" class="chat-composer">
+              <textarea id="chat-input" class="chat-input" rows="1"
+                placeholder="Ask a threat intel question…  (e.g. What do we know about LockBit?)"></textarea>
+              <button class="chat-send" type="submit" title="Send (Enter)" aria-label="Send">
+                <span class="chat-send-icon">↑</span>
+              </button>
             </form>
+            <div class="chat-hint small-note">
+              <span><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
+            </div>
           </div>
 
           <div id="pane-report" hidden>
@@ -215,17 +222,92 @@ export function mount() {
     }
   };
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
+  const sendBtn = form.querySelector(".chat-send");
+
+  // Grow the textarea with its content, up to a cap, then scroll.
+  const autoGrow = () => {
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 180)}px`;
+  };
+  // Reflect "has text" so the send button can light up / dim.
+  const syncSendState = () => {
+    const empty = input.value.trim() === "";
+    if (sendBtn) sendBtn.disabled = empty;
+    form.classList.toggle("is-empty", empty);
+  };
+
+  const submitPrompt = () => {
     const value = input.value.trim();
     if (!value) return;
     input.value = "";
+    autoGrow();
+    syncSendState();
     ask(value);
+  };
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitPrompt();
   });
 
-  document.querySelectorAll("[data-prompt]").forEach((chip) =>
-    chip.addEventListener("click", () => ask(chip.textContent.trim()))
-  );
+  // Enter sends; Shift+Enter inserts a newline.
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      submitPrompt();
+    }
+  });
+  input.addEventListener("input", () => { autoGrow(); syncSendState(); });
+  syncSendState();
+
+  // ---- dynamic suggested prompts -----------------------------------------
+  const chipsBox = document.getElementById("suggestion-chips");
+  const refreshBtn = document.getElementById("suggestions-refresh");
+
+  const _CATEGORY_BADGE = {
+    threat_actor:     "actor",
+    malware:          "malware",
+    attack_technique: "ATT&CK",
+    campaign:         "campaign",
+    cve:              "CVE",
+    ioc:              "IOC",
+    stats:            "stats",
+    recent:           "recent",
+  };
+
+  const renderChips = (items) => {
+    if (!items || items.length === 0) {
+      chipsBox.innerHTML = `<span class="small-note">No suggestions yet — the store is still warming up.</span>`;
+      return;
+    }
+    chipsBox.innerHTML = items.map((s) => {
+      const label = _CATEGORY_BADGE[s.category] || s.category || "";
+      return `<span class="chip" data-prompt title="Category: ${esc(s.category)}">
+                <span class="chip-tag">${esc(label)}</span>
+                ${esc(s.prompt)}
+              </span>`;
+    }).join("");
+    chipsBox.querySelectorAll("[data-prompt]").forEach((chip) => {
+      // Take only the visible prompt text, drop the leading chip-tag span.
+      chip.addEventListener("click", () => {
+        const tagSpan = chip.querySelector(".chip-tag");
+        const prompt = chip.textContent.replace(tagSpan ? tagSpan.textContent : "", "").trim();
+        ask(prompt);
+      });
+    });
+  };
+
+  const loadSuggestions = async () => {
+    try {
+      const res = await apiFetch("/chat/suggestions");
+      renderChips(res.items || []);
+    } catch {
+      chipsBox.innerHTML = `<span class="small-note is-error">Unable to load suggestions.</span>`;
+    }
+  };
+
+  refreshBtn.addEventListener("click", loadSuggestions);
+  loadSuggestions();
 
   resetBtn.addEventListener("click", async () => {
     try {

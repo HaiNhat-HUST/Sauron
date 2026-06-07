@@ -50,8 +50,20 @@ export const simpleList = (items, render) =>
 export function appLayout({ nav, title, subtitle, content }) {
   const user = getUser() || {};
   const role = user.role === "admin" ? "Administrator" : "Analyst";
-  const adminLink = isAdmin()
-    ? `<a class="nav-link ${nav === "admin" ? "is-active" : ""}" href="#/admin">Admin console <span class="nav-pill">Admin</span></a>`
+  const onAdmin = nav.startsWith("admin");
+  const adminLinks = isAdmin()
+    ? `
+        <details class="nav-toggle" ${onAdmin ? "open" : ""}>
+          <summary class="nav-link ${onAdmin ? "is-active" : ""}">
+            <span>Admin console <span class="nav-pill">Admin</span></span>
+            <span class="nav-caret">▾</span>
+          </summary>
+          <div class="nav-submenu">
+            <a class="nav-link nav-sub ${nav === "admin-connectors" ? "is-active" : ""}" href="#/admin-connectors">Connectors</a>
+            <a class="nav-link nav-sub ${nav === "admin-llm" ? "is-active" : ""}" href="#/admin-llm">LLM &amp; retention</a>
+            <a class="nav-link nav-sub ${nav === "admin-users" ? "is-active" : ""}" href="#/admin-users">Users</a>
+          </div>
+        </details>`
     : "";
   return `
     <div class="app-shell">
@@ -59,8 +71,9 @@ export function appLayout({ nav, title, subtitle, content }) {
         <div class="brand"><span class="brand-mark">TL</span><span>Threat Lens</span></div>
         <nav class="nav-links">
           <a class="nav-link ${nav === "dashboard" ? "is-active" : ""}" href="#/dashboard">Overview</a>
+          <a class="nav-link ${nav === "articles" ? "is-active" : ""}" href="#/articles">Articles</a>
           <a class="nav-link ${nav === "chat" ? "is-active" : ""}" href="#/chat">Intel chat</a>
-          ${adminLink}
+          ${adminLinks}
         </nav>
         <div class="sidebar-footer">ai-threat-intel</div>
       </aside>

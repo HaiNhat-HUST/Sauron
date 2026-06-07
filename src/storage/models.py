@@ -5,6 +5,9 @@
 * ``iocs``          — indicators of compromise (globally unique by type+value).
 * ``cves``          — vulnerabilities.
 * ``article_cves``  — article ↔ CVE (many-to-many).
+* ``article_iocs``  — article ↔ IOC (many-to-many); the same indicator can be
+  referenced by many articles, which is what lets the graph pivot from an IOC
+  back out to every article that mentions it.
 * ``tags``          — taxonomy (malware / attack_technique / threat_actor / campaign).
 * ``article_tags``  — article ↔ tag (many-to-many) with a confidence score.
 
@@ -36,7 +39,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
@@ -60,8 +63,6 @@ class Article(Base):
     summary_llm: Mapped[str | None] = mapped_column(Text)          # filled later by LLM
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
 
-    iocs: Mapped[list["IOC"]] = relationship(back_populates="article")
-
     __table_args__ = (
         Index("idx_articles_date", "published_date"),
         Index("idx_articles_source", "source_type"),
@@ -74,9 +75,6 @@ class IOC(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ioc_type: Mapped[str] = mapped_column(String(20), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False)
-    article_id: Mapped[int | None] = mapped_column(
-        ForeignKey("articles.id", ondelete="SET NULL")
-    )
     source_type: Mapped[str | None] = mapped_column(String(50))
     first_seen: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     last_seen: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
@@ -84,8 +82,6 @@ class IOC(Base):
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(String))
     score: Mapped[float] = mapped_column(Float, default=0.0)
     enrichment: Mapped[dict | None] = mapped_column(JSONB)
-
-    article: Mapped["Article | None"] = relationship(back_populates="iocs")
 
     __table_args__ = (
         UniqueConstraint("ioc_type", "value", name="uq_iocs_type_value"),
@@ -108,6 +104,9 @@ class CVE(Base):
     products: Mapped[list[str] | None] = mapped_column(ARRAY(String))
     source_type: Mapped[str | None] = mapped_column(String(50))
     known_exploited: Mapped[bool] = mapped_column(default=False)  # from CISA KEV
+    # Derived intel filled by the enrichment stage (EPSS score, later ExploitDB
+    # etc.). NULL until an enricher runs — also the scanner's "to-do" signal.
+    enrichment: Mapped[dict | None] = mapped_column(JSONB)
 
     __table_args__ = (Index("idx_cves_published", "published_date"),)
 
@@ -123,12 +122,67 @@ class ArticleCVE(Base):
     )
 
 
+class ArticleIOC(Base):
+    """article ↔ IOC link (many-to-many).
+
+    One IOC row is globally unique by (type, value); this table records every
+    article that referenced it, so the graph can pivot from an indicator to all
+    the articles that mention it. ``context`` keeps the per-article note (the
+    surrounding text), since the same indicator may mean different things in
+    different reports.
+    """
+
+    __tablename__ = "article_iocs"
+
+    article_id: Mapped[int] = mapped_column(
+        ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True
+    )
+    ioc_id: Mapped[int] = mapped_column(
+        ForeignKey("iocs.id", ondelete="CASCADE"), primary_key=True
+    )
+    context: Mapped[str | None] = mapped_column(Text)
+
+
+class IOCRelation(Base):
+    """IOC ↔ IOC link (directed) discovered during enrichment.
+
+    Lets the graph pivot between indicators that share infrastructure — e.g. a
+    domain ``resolves_to`` an IP, a URL's ``url_host`` is a domain. Two domains
+    resolving to the same IP become reachable from that IP node, surfacing
+    shared infrastructure across otherwise-unrelated articles.
+
+    ``relation`` values: ``resolves_to`` | ``url_host`` | ``email_domain``.
+    The pair is unique on (src, dst, relation) so re-enriching is idempotent.
+    """
+
+    __tablename__ = "ioc_relations"
+
+    src_ioc_id: Mapped[int] = mapped_column(
+        ForeignKey("iocs.id", ondelete="CASCADE"), primary_key=True
+    )
+    dst_ioc_id: Mapped[int] = mapped_column(
+        ForeignKey("iocs.id", ondelete="CASCADE"), primary_key=True
+    )
+    relation: Mapped[str] = mapped_column(String(32), primary_key=True)
+
+    __table_args__ = (
+        Index("idx_ioc_relations_dst", "dst_ioc_id"),
+    )
+
+
 class Tag(Base):
     __tablename__ = "tags"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Stable identity / dedup key. For ATT&CK techniques this is the bare T-code
+    # (e.g. "T1059.001") so the same technique always maps to one row, no matter
+    # which source named it. For other types it's the entity name itself.
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     type: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Human-readable display name. For techniques this is the ATT&CK taxonomy
+    # name ("Command and Scripting Interpreter"); shown in tooltips / reports.
+    # NULL until a source that knows the name (MITRE / OTX) fills it.
+    label: Mapped[str | None] = mapped_column(String(255))
 
     __table_args__ = (Index("idx_tags_type", "type"),)
 

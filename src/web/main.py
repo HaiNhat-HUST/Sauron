@@ -18,7 +18,7 @@ from ..collectors.scheduler import get_scheduler
 from ..enrichment.worker import get_worker as get_enrichment_worker
 from ..storage import app as appstore
 from ..storage.database import dispose, init_db
-from .routers import admin, auth, chat, dashboard
+from .routers import admin, articles, auth, chat, dashboard
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ app = FastAPI(title="ai-threat-intel", version="0.1.0")
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(dashboard.router)
+app.include_router(articles.router)
 app.include_router(chat.router)
 
 
