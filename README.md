@@ -31,7 +31,7 @@ with an interactive relationship graph and a tool-calling chat agent.
 
 ## Demo
 
-[![Watch the demo on YouTube](https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=1LU_yqyECtk)
+[![Watch the demo on YouTube](https://img.youtube.com/vi/1LU_yqyECtk/maxresdefault.jpg)](https://www.youtube.com/watch?v=1LU_yqyECtk)
 
 ---
 
